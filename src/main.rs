@@ -156,14 +156,12 @@ fn main() -> io::Result<()> {
 
             // Checking for matching names and strands
             if query_name != query_name_2 || target_name != target_name_2 || feature_in_query_name != feature_in_target_name {
-                eprintln!("ERROR: query, target, and/or feature name do not match.");
-                std::process::exit(1);
+                eprintln!("WARNING: query, target, and/or feature name do not match! Skip this line: {}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", feature_in_query_name, query_name, feature_in_query_start, feature_in_query_end, query_strand, target_name, feature_in_target_start, feature_in_target_end);
+                continue;
             }
             if feature_in_query_strand != feature_in_target_strand && query_strand == "+" {
                 // If the features are on different strands, the query should be reversed in order to align them
-                eprintln!("ERROR: <<<<<<<<TO CONFIRM>>>>>>>>  the feature is on different strands in query and target, but query and target are in the same orientation!");
-                eprintln!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", feature_in_query_name, query_name, feature_in_query_start, feature_in_query_end, query_strand, target_name, feature_in_target_start, feature_in_target_end);
-
+                eprintln!("WARNING: the feature is on different strands in query and target, but query and target are in the same orientation! Skip this line:  {}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", feature_in_query_name, query_name, feature_in_query_start, feature_in_query_end, query_strand, target_name, feature_in_target_start, feature_in_target_end);
                 continue;
             }
 
