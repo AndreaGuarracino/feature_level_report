@@ -162,7 +162,9 @@ fn main() -> io::Result<()> {
             if feature_in_query_strand != feature_in_target_strand && query_strand == "+" {
                 // If the features are on different strands, the query should be reversed in order to align them
                 eprintln!("ERROR: <<<<<<<<TO CONFIRM>>>>>>>>  the feature is on different strands in query and target, but query and target are in the same orientation!");
-                std::process::exit(1);
+                eprintln!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", feature_in_query_name, query_name, feature_in_query_start, feature_in_query_end, query_strand, target_name, feature_in_target_start, feature_in_target_end);
+
+                continue;
             }
 
             let (aligned_bases, not_aligned_bases_in_query, not_aligned_bases_in_target, indels_in_query, indels_in_target, ignored_bases_in_query, ignored_bases_in_target) = count_aligned_bases(
