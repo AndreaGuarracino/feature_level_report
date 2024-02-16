@@ -3,10 +3,10 @@ use regex::Regex;
 use std::{fs::File, io::{self, BufRead, BufReader}};
 use flate2::read::GzDecoder;
 
-fn count_aligned_bases(query_start: i32, query_end: i32, query_strand: char, target_start: i32, _target_end: i32, cigar: &str, feature_in_query_start: i32, feature_in_query_end: i32, feature_in_target_start: i32, feature_in_target_end: i32, max_indel_size: i32) -> (i32, i32, i32, i32, i32) {
+fn count_aligned_bases(query_start: i64, query_end: i64, query_strand: char, target_start: i64, _target_end: i64, cigar: &str, feature_in_query_start: i64, feature_in_query_end: i64, feature_in_target_start: i64, feature_in_target_end: i64, max_indel_size: i64) -> (i64, i64, i64, i64, i64, i64, i64) {
     let mut aligned_bases = 0;
-    let not_aligned_bases_query = feature_in_query_end - feature_in_query_start;
-    let not_aligned_bases_target = feature_in_target_end - feature_in_target_start;
+    let mut not_aligned_bases_in_query = 0;
+    let mut not_aligned_bases_in_target = 0;
     let mut indels_in_query = 0;
     let mut indels_in_target =  0;
     let query_rev = query_strand == '-';
@@ -18,7 +18,7 @@ fn count_aligned_bases(query_start: i32, query_end: i32, query_strand: char, tar
     // Iterate over CIGAR operations
     let cigar_re = Regex::new(r"(\d+)([MIDNSHP=X])").unwrap();
     for cap in cigar_re.captures_iter(cigar) {
-        let length = cap[1].parse::<i32>().unwrap();
+        let length = cap[1].parse::<i64>().unwrap();
         let op = &cap[2];
         match op {
             "M" | "=" | "X" => {
@@ -40,22 +40,26 @@ fn count_aligned_bases(query_start: i32, query_end: i32, query_strand: char, tar
             },
             "D" => {
                 // Handle deletion in the query (insertion in the target)
+                let overlap_target = std::cmp::max(0, std::cmp::min(target_pos + length, feature_in_target_end) - std::cmp::max(target_pos, feature_in_target_start));
                 if length <= max_indel_size {
-                    let overlap_target = std::cmp::max(0, std::cmp::min(target_pos + length, feature_in_target_end) - std::cmp::max(target_pos, feature_in_target_start));
                     indels_in_target += overlap_target;
+                } else {
+                    not_aligned_bases_in_target += overlap_target;
                 }
 
                 target_pos += length;
             },
             "I" => {
                 // Handle insertion in the query (gap in the target)
+                let overlap_query = if query_rev {
+                    std::cmp::max(0, std::cmp::min(query_pos, feature_in_query_end) - std::cmp::max(query_pos - length, feature_in_query_start))
+                } else {
+                    std::cmp::max(0, std::cmp::min(query_pos + length, feature_in_query_end) - std::cmp::max(query_pos, feature_in_query_start))
+                };
                 if length <= max_indel_size {
-                    let overlap_query = if query_rev {
-                        std::cmp::max(0, std::cmp::min(query_pos, feature_in_query_end) - std::cmp::max(query_pos - length, feature_in_query_start))
-                    } else {
-                        std::cmp::max(0, std::cmp::min(query_pos + length, feature_in_query_end) - std::cmp::max(query_pos, feature_in_query_start))
-                    };
                     indels_in_query += overlap_query;
+                } else {
+                    not_aligned_bases_in_query += overlap_query;
                 }
 
                 if query_rev {
@@ -72,7 +76,7 @@ fn count_aligned_bases(query_start: i32, query_end: i32, query_strand: char, tar
             break;
         }
     }
-    (aligned_bases, not_aligned_bases_query - aligned_bases - indels_in_query, not_aligned_bases_target - aligned_bases - indels_in_target, indels_in_query, indels_in_target)
+    (aligned_bases, not_aligned_bases_in_query, not_aligned_bases_in_target, indels_in_query, indels_in_target, (feature_in_query_end - feature_in_query_start) - aligned_bases - indels_in_query - not_aligned_bases_in_query, (feature_in_target_end - feature_in_target_start) - aligned_bases - indels_in_target - not_aligned_bases_in_target)
 }
 
 fn open_file(file_path: &str) -> Box<dyn BufRead> {
@@ -104,10 +108,10 @@ fn main() -> io::Result<()> {
 
     let input_file = matches.value_of("input").unwrap_or("");
     let max_indel_size = matches.value_of("max_indel_size")
-        .map(|s| s.parse::<i32>().expect("Invalid value for max indel size"))
-        .unwrap_or(i32::MAX);
+        .map(|s| s.parse::<i64>().expect("Invalid value for max indel size"))
+        .unwrap_or(i64::MAX);
 
-    println!("feature.name\tquery\tquery.feature.start\tquery.feature.end\tquery.strand\ttarget\ttarget.feature.start\ttarget.feature.end\taligned.bp\tnot.aligned.in.query.bp\tnot.aligned.in.target.bp\tindels.in.query.bp\tindels.in.target");
+    println!("feature.name\tquery\tquery.feature.start\tquery.feature.end\tquery.strand\ttarget\ttarget.feature.start\ttarget.feature.end\taligned.bp\tnot.aligned.in.query.bp\tnot.aligned.in.target.bp\tindels.in.query.bp\tindels.in.target\tignored.in.query.bp\tignored.in.target.bp");
 
     if !input_file.is_empty() {
         let file = open_file(input_file);
@@ -123,28 +127,28 @@ fn main() -> io::Result<()> {
             // }
 
             let query_name = parts[0];
-            //let query_len = parts[1].parse::<i32>().expect("Invalid query len");
-            let query_start = parts[2].parse::<i32>().expect("Invalid query start");
-            let query_end = parts[3].parse::<i32>().expect("Invalid query end");
+            //let query_len = parts[1].parse::<i64>().expect("Invalid query len");
+            let query_start = parts[2].parse::<i64>().expect("Invalid query start");
+            let query_end = parts[3].parse::<i64>().expect("Invalid query end");
             let query_strand = parts[4];
             let target_name = parts[5];
-            //let target_len = parts[6].parse::<i32>().expect("Invalid target len");
-            let target_start = parts[7].parse::<i32>().expect("Invalid target start");
-            let target_end = parts[8].parse::<i32>().expect("Invalid target end");
+            //let target_len = parts[6].parse::<i64>().expect("Invalid target len");
+            let target_start = parts[7].parse::<i64>().expect("Invalid target start");
+            let target_end = parts[8].parse::<i64>().expect("Invalid target end");
             //_
             //_
             //_
             let cigar = parts[12].split("cg:Z:").last().unwrap_or_default();
             let query_name_2 = parts[13];
-            let feature_in_query_start = parts[14].parse::<i32>().expect("Invalid feature in query start");
-            let feature_in_query_end = parts[15].parse::<i32>().expect("Invalid feature in query end");
+            let feature_in_query_start = parts[14].parse::<i64>().expect("Invalid feature in query start");
+            let feature_in_query_end = parts[15].parse::<i64>().expect("Invalid feature in query end");
             let feature_in_query_name = parts[16];
             //_
             let feature_in_query_strand = parts[18];
             //let feature_in_query_class = parts[19];
             let target_name_2 = parts[20];
-            let feature_in_target_start = parts[21].parse::<i32>().expect("Invalid feature in target start");
-            let feature_in_target_end = parts[22].parse::<i32>().expect("Invalid feature in target start");
+            let feature_in_target_start = parts[21].parse::<i64>().expect("Invalid feature in target start");
+            let feature_in_target_end = parts[22].parse::<i64>().expect("Invalid feature in target start");
             let feature_in_target_name = parts[23];
             //_
             let feature_in_target_strand = parts[25];
@@ -161,11 +165,11 @@ fn main() -> io::Result<()> {
                 std::process::exit(1);
             }
 
-            let (aligned_bases, not_aligned_bases_query, not_aligned_bases_target, indels_in_query, indels_in_target) = count_aligned_bases(
+            let (aligned_bases, not_aligned_bases_in_query, not_aligned_bases_in_target, indels_in_query, indels_in_target, ignored_bases_in_query, ignored_bases_in_target) = count_aligned_bases(
                 query_start, query_end, query_strand.chars().next().unwrap(), target_start, target_end, cigar, feature_in_query_start, feature_in_query_end, feature_in_target_start, feature_in_target_end, max_indel_size
             );
 
-            println!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", feature_in_query_name, query_name, feature_in_query_start, feature_in_query_end, query_strand, target_name, feature_in_target_start, feature_in_target_end, aligned_bases, not_aligned_bases_query, not_aligned_bases_target, indels_in_query, indels_in_target);
+            println!("{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", feature_in_query_name, query_name, feature_in_query_start, feature_in_query_end, query_strand, target_name, feature_in_target_start, feature_in_target_end, aligned_bases, not_aligned_bases_in_query, not_aligned_bases_in_target, indels_in_query, indels_in_target, ignored_bases_in_query, ignored_bases_in_target);
         }
     }
 
