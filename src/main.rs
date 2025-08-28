@@ -1,4 +1,4 @@
-use clap::{App, Arg};
+use clap::{Arg, Command};
 use regex::Regex;
 use std::{fs::File, io::{self, BufRead, BufReader}};
 use flate2::read::GzDecoder;
@@ -72,7 +72,7 @@ fn count_aligned_bases(query_start: i64, query_end: i64, query_strand: char, tar
         }
 
         // Check if we have already passed the features in both query and target
-        if (query_rev && query_pos <= feature_in_query_start) || (!query_rev && query_pos >= feature_in_query_end) && target_pos >= feature_in_target_end {
+        if ((query_rev && query_pos <= feature_in_query_start) || (!query_rev && query_pos >= feature_in_query_end)) && target_pos >= feature_in_target_end {
             break;
         }
     }
@@ -88,30 +88,30 @@ fn open_file(file_path: &str) -> Box<dyn BufRead> {
 }
 
 fn main() -> io::Result<()> {
-    let matches = App::new("Alignment Feature Counter")
+    let matches = Command::new("Alignment Feature Counter")
         .version("1.0")
-        .author("Andrea Guarracino Name <aguarra1@uthsc.edu>")
+        .author("Andrea Guarracino <aguarra1@uthsc.edu>")
         .about("Counts aligned bases for features in alignment data")
-        .arg(Arg::with_name("input")
+        .arg(Arg::new("input")
             .short('i')
             .long("input")
             .value_name("FILE")
             .help("Input file, can be gzipped")
-            .takes_value(true))
-        .arg(Arg::with_name("max_indel_size")
+            .num_args(1))
+        .arg(Arg::new("max_indel_size")
             .short('m')
             .long("max-indel-size")
             .value_name("INT")
             .help("Maximum size of indels to consider in feature intervals")
-            .takes_value(true))
+            .num_args(1))
         .get_matches();
 
-    let input_file = matches.value_of("input").unwrap_or("");
-    let max_indel_size = matches.value_of("max_indel_size")
+    let input_file = matches.get_one::<String>("input").map(|s| s.as_str()).unwrap_or("");
+    let max_indel_size = matches.get_one::<String>("max_indel_size")
         .map(|s| s.parse::<i64>().expect("Invalid value for max indel size"))
         .unwrap_or(i64::MAX);
 
-    println!("feature.name\tquery\tquery.feature.start\tquery.feature.end\tquery.strand\ttarget\ttarget.feature.start\ttarget.feature.end\taligned.bp\tnot.aligned.in.query.bp\tnot.aligned.in.target.bp\tindels.in.query.bp\tindels.in.target\tignored.in.query.bp\tignored.in.target.bp");
+    println!("feature.name\tquery\tquery.feature.start\tquery.feature.end\tquery.strand\ttarget\ttarget.feature.start\ttarget.feature.end\taligned.bp\tnot.aligned.in.query.bp\tnot.aligned.in.target.bp\tindels.in.query.bp\tindels.in.target.bp\tignored.in.query.bp\tignored.in.target.bp");
 
     if !input_file.is_empty() {
         let file = open_file(input_file);
@@ -148,7 +148,7 @@ fn main() -> io::Result<()> {
             //let feature_in_query_class = parts[19];
             let target_name_2 = parts[20];
             let feature_in_target_start = parts[21].parse::<i64>().expect("Invalid feature in target start");
-            let feature_in_target_end = parts[22].parse::<i64>().expect("Invalid feature in target start");
+            let feature_in_target_end = parts[22].parse::<i64>().expect("Invalid feature in target end");
             let feature_in_target_name = parts[23];
             //_
             let feature_in_target_strand = parts[25];
@@ -161,7 +161,7 @@ fn main() -> io::Result<()> {
             }
             if feature_in_query_strand != feature_in_target_strand && query_strand == "+" {
                 // If the features are on different strands, the query should be reversed in order to align them
-                eprintln!("WARNING: the feature is on different strands in query and target, but query and target are in the same orientation! Skip this line:  {}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", feature_in_query_name, query_name, feature_in_query_start, feature_in_query_end, query_strand, target_name, feature_in_target_start, feature_in_target_end);
+                eprintln!("WARNING: the feature is on different strands in query and target, but query and target are in the same orientation! Skip this line: {}\t{}\t{}\t{}\t{}\t{}\t{}\t{}", feature_in_query_name, query_name, feature_in_query_start, feature_in_query_end, query_strand, target_name, feature_in_target_start, feature_in_target_end);
                 continue;
             }
 
